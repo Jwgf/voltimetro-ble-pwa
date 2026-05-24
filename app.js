@@ -14,8 +14,13 @@ let device = null;
 let server = null;
 let characteristic = null;
 let reconnecting = false;
+
 let voiceEnabled = false;
 let lastSpokenAt = 0;
+
+let wakeLock = null;
+let wakeLockEnabled = false;
+
 let sampleCount = 0;
 
 const history = [];
@@ -27,12 +32,16 @@ const statusEl = $('status');
 const badgeEl = $('badge');
 const voltageEl = $('voltage');
 const rangeEl = $('range');
+
 const connectBtn = $('connectBtn');
 const voiceBtn = $('voiceBtn');
+const wakeBtn = $('wakeBtn');
 const clearBtn = $('clearBtn');
+
 const lastRawEl = $('lastRaw');
 const samplesEl = $('samples');
 const connStateEl = $('connState');
+
 const canvas = $('chart');
 const ctx = canvas.getContext('2d');
 
@@ -79,6 +88,7 @@ async function connectKnownDevice() {
   try {
     reconnecting = true;
     setStatus('Conectando BLE...');
+
     server = await device.gatt.connect();
 
     const service = await server.getPrimaryService(SERVICE_UUID);
@@ -99,11 +109,13 @@ async function connectKnownDevice() {
 
 function onDisconnected() {
   setStatus('Se perdió la señal. Reintentando...');
+
   characteristic = null;
   server = null;
 
   // La reconexión solo puede intentar contra el mismo device autorizado.
-  // Si el navegador elimina el permiso o se recarga la página, habrá que tocar Conectar otra vez.
+  // Si el navegador elimina el permiso o se recarga la página,
+  // habrá que tocar Conectar otra vez.
   retryReconnect();
 }
 
@@ -113,8 +125,11 @@ async function retryReconnect() {
   for (let i = 0; i < 20; i++) {
     try {
       await new Promise(resolve => setTimeout(resolve, 1000));
+
       if (device.gatt.connected) return;
+
       await connectKnownDevice();
+
       if (device.gatt.connected) return;
     } catch (err) {
       console.warn('Reintento BLE falló', i + 1, err);
@@ -126,6 +141,7 @@ async function retryReconnect() {
 
 function onData(event) {
   const text = new TextDecoder().decode(event.target.value).trim();
+
   lastRawEl.textContent = text;
 
   const parts = text.split(',');
@@ -148,7 +164,10 @@ function onData(event) {
 
 function pushPoint(v) {
   history.push({ t: Date.now(), v });
-  while (history.length > MAX_POINTS) history.shift();
+
+  while (history.length > MAX_POINTS) {
+    history.shift();
+  }
 }
 
 function clearChart() {
@@ -159,6 +178,7 @@ function clearChart() {
 function drawChart() {
   const w = canvas.width;
   const h = canvas.height;
+
   ctx.clearRect(0, 0, w, h);
 
   ctx.fillStyle = '#080808';
@@ -166,8 +186,10 @@ function drawChart() {
 
   ctx.strokeStyle = '#242424';
   ctx.lineWidth = 1;
+
   for (let i = 1; i < 5; i++) {
     const y = (h * i) / 5;
+
     ctx.beginPath();
     ctx.moveTo(0, y);
     ctx.lineTo(w, y);
@@ -177,6 +199,7 @@ function drawChart() {
   if (history.length < 2) return;
 
   const vals = history.map(p => p.v);
+
   let min = Math.min(...vals);
   let max = Math.max(...vals);
 
@@ -195,7 +218,11 @@ function drawChart() {
   }
 
   const pad = 18;
-  const xOf = (i) => pad + (w - pad * 2) * i / (MAX_POINTS - 1);
+
+  const xOf = (i) => {
+    return pad + (w - pad * 2) * i / (MAX_POINTS - 1);
+  };
+
   const yOf = (v) => {
     const y = h - pad - (h - pad * 2) * (v - min) / (max - min);
     return Math.max(pad, Math.min(h - pad, y));
@@ -208,8 +235,12 @@ function drawChart() {
   history.forEach((p, i) => {
     const x = xOf(Math.max(0, MAX_POINTS - history.length + i));
     const y = yOf(p.v);
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
+
+    if (i === 0) {
+      ctx.moveTo(x, y);
+    } else {
+      ctx.lineTo(x, y);
+    }
   });
 
   ctx.stroke();
@@ -227,7 +258,9 @@ function toggleVoice() {
   if (voiceEnabled) {
     speakText('Voz activada');
   } else {
-    speechSynthesis.cancel();
+    if ('speechSynthesis' in window) {
+      speechSynthesis.cancel();
+    }
   }
 }
 
@@ -235,7 +268,9 @@ function speakIfNeeded(v) {
   if (!voiceEnabled) return;
 
   const now = Date.now();
+
   if (now - lastSpokenAt < 3000) return;
+
   lastSpokenAt = now;
 
   const value = v.toFixed(1).replace('.', ',');
@@ -248,6 +283,7 @@ function speakText(text) {
   const msg = new SpeechSynthesisUtterance(text);
 
   const voices = speechSynthesis.getVoices();
+
   const preferredVoice =
     voices.find(v => v.lang === 'es-US') ||
     voices.find(v => v.lang && v.lang.startsWith('es')) ||
@@ -260,6 +296,8 @@ function speakText(text) {
     msg.lang = 'es-US';
   }
 
+  // Ajuste elegido en la prueba:
+  // es-US, un poco más lenta y más grave.
   msg.rate = 0.92;
   msg.pitch = 0.75;
 
@@ -267,16 +305,74 @@ function speakText(text) {
   speechSynthesis.speak(msg);
 }
 
-connectBtn.addEventListener('click', connect);
-voiceBtn.addEventListener('click', toggleVoice);
-clearBtn.addEventListener('click', clearChart);
+async function requestWakeLock() {
+  if (!wakeBtn) return;
 
-drawChart();
+  if (!('wakeLock' in navigator)) {
+    wakeBtn.textContent = 'PANTALLA: NO SOPORTADO';
+    alert('Este navegador no soporta mantener la pantalla encendida.');
+    return;
+  }
 
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  });
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+
+    wakeLock.addEventListener('release', () => {
+      wakeLock = null;
+
+      if (wakeLockEnabled) {
+        wakeBtn.textContent = 'PANTALLA: REINTENTAR';
+      } else {
+        wakeBtn.textContent = 'PANTALLA: OFF';
+      }
+    });
+
+    wakeBtn.textContent = 'PANTALLA: ON';
+  } catch (err) {
+    console.error('No se pudo activar Wake Lock', err);
+    wakeBtn.textContent = 'PANTALLA: ERROR';
+  }
 }
 
-setStatus('Listo para conectar');
+async function releaseWakeLock() {
+  wakeLockEnabled = false;
+
+  if (wakeLock) {
+    try {
+      await wakeLock.release();
+    } catch (err) {
+      console.warn('Error liberando Wake Lock', err);
+    }
+  }
+
+  wakeLock = null;
+
+  if (wakeBtn) {
+    wakeBtn.textContent = 'PANTALLA: OFF';
+  }
+}
+
+async function toggleWakeLock() {
+  wakeLockEnabled = !wakeLockEnabled;
+
+  if (wakeLockEnabled) {
+    await requestWakeLock();
+  } else {
+    await releaseWakeLock();
+  }
+}
+
+document.addEventListener('visibilitychange', async () => {
+  if (wakeLockEnabled && document.visibilityState === 'visible' && !wakeLock) {
+    await requestWakeLock();
+  }
+});
+
+connectBtn.addEventListener('click', connect);
+voiceBtn.addEventListener('click', toggleVoice);
+
+if (wakeBtn) {
+  wakeBtn.addEventListener('click', toggleWakeLock);
+}
+
+clearBtn.addEventListener('click', clearChart);
