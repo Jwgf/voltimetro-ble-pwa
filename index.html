@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Voltímetro Taller</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111111">
+  <link rel="manifest" href="./manifest.json">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <main class="app">
+    <section class="panel top">
+      <div>
+        <h1>Voltímetro Taller</h1>
+        <p id="status">Sin conectar</p>
+      </div>
+      <div id="badge" class="badge off">OFF</div>
+    </section>
+
+    <section class="reading">
+      <div id="voltage" class="voltage">--.--</div>
+      <div class="unit">V</div>
+      <div id="range" class="range">RANGO --</div>
+    </section>
+
+    <section class="buttons">
+      <button id="connectBtn" class="mainBtn">CONECTAR VOLTÍMETRO</button>
+      <button id="voiceBtn" class="secondaryBtn">VOZ: OFF</button>
+      <button id="clearBtn" class="secondaryBtn">LIMPIAR GRÁFICO</button>
+    </section>
+
+    <section class="panel">
+      <canvas id="chart" width="900" height="280"></canvas>
+    </section>
+
+    <section class="panel small">
+      <div class="row"><span>Última lectura:</span><strong id="lastRaw">---</strong></div>
+      <div class="row"><span>Muestras:</span><strong id="samples">0</strong></div>
+      <div class="row"><span>Conexión:</span><strong id="connState">---</strong></div>
+    </section>
+
+    <section class="note">
+      <p>
+        Prueba de visor PWA con datos simulados enviados por ESP32 vía BLE GATT.
+        En celular debe abrirse desde HTTPS para que Web Bluetooth funcione.
+      </p>
+    </section>
+  </main>
+
+  <script src="./app.js"></script>
+</body>
+</html>
