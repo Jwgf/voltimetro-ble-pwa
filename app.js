@@ -85,6 +85,16 @@ const badgeEl = $('badge');
 const canvas = $('chart');
 const ctx = canvas.getContext('2d');
 
+const chartOpenArea = $('chartOpenArea');
+const chartOverlay = $('chartOverlay');
+const fullCanvas = $('chartFull');
+const fullCtx = fullCanvas.getContext('2d');
+const fullClose = $('fullClose');
+const fullClose2 = $('fullClose2');
+const fullFreeze = $('fullFreeze');
+const fullClear = $('fullClear');
+let chartFullscreen = false;
+
 function setStatus(text, connected = false) {
   statusEl.textContent = text;
   connStateEl.textContent = connected ? 'Conectado' : text;
@@ -443,12 +453,26 @@ function updateReadout() {
   }
 }
 
+function metricTone(label) {
+  const normalized = String(label || '').toLowerCase();
+  if (normalized.startsWith('mín') || normalized.startsWith('min') || normalized.includes('bajo')) return 'min';
+  if (normalized.startsWith('máx') || normalized.startsWith('max') || normalized.includes('alto')) return 'max';
+  if (normalized.includes('pico') || normalized.includes('rizado') || normalized.includes('variación')) return 'pico';
+  return '';
+}
+
 function setMetrics(pairs) {
   pairs.forEach((pair, index) => {
     const n = index + 1;
+    const box = $(`m${n}k`).closest('.metric');
+    box.classList.remove('min', 'max', 'pico');
+    const tone = metricTone(pair[0]);
+    if (tone) box.classList.add(tone);
     $(`m${n}k`).textContent = pair[0];
     $(`m${n}v`).textContent = pair[1];
   });
+
+  updateFullMetrics();
 }
 
 function autoScale() {
@@ -463,19 +487,28 @@ function clearChart() {
   drawChart();
 }
 
-function resizeCanvas() {
+function resizeOneCanvas(targetCanvas, targetCtx) {
   const dpr = window.devicePixelRatio || 1;
-  const rect = canvas.getBoundingClientRect();
+  const rect = targetCanvas.getBoundingClientRect();
   const width = Math.max(1, Math.floor(rect.width * dpr));
   const height = Math.max(1, Math.floor(rect.height * dpr));
 
-  if (canvas.width !== width || canvas.height !== height) {
-    canvas.width = width;
-    canvas.height = height;
+  if (targetCanvas.width !== width || targetCanvas.height !== height) {
+    targetCanvas.width = width;
+    targetCanvas.height = height;
   }
 
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  targetCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+function resizeCanvas() {
+  resizeOneCanvas(canvas, ctx);
   drawChart();
+
+  if (chartFullscreen) {
+    resizeOneCanvas(fullCanvas, fullCtx);
+    drawFullChart();
+  }
 }
 
 function chartBounds(points) {
@@ -505,19 +538,33 @@ function chartBounds(points) {
 }
 
 function drawChart() {
-  const rect = canvas.getBoundingClientRect();
+  drawChartOn(canvas, ctx, false);
+  if (chartFullscreen) drawFullChart();
+}
+
+function drawFullChart() {
+  drawChartOn(fullCanvas, fullCtx, true);
+}
+
+function visibleData() {
+  const mode = modes[selectedMode];
+  const now = Date.now();
+  const points = history.filter(p => now - p.t <= mode.timeMs);
+  return { now, mode, data: points.length ? points : history };
+}
+
+function drawChartOn(targetCanvas, targetCtx, isFull = false) {
+  const rect = targetCanvas.getBoundingClientRect();
   const w = rect.width;
   const h = rect.height;
   if (!w || !h) return;
 
-  const mode = modes[selectedMode];
-  const now = Date.now();
-  const points = history.filter(p => now - p.t <= mode.timeMs);
-  const data = points.length ? points : history;
+  const { now, mode, data } = visibleData();
   const bounds = chartBounds(data);
 
-  drawGrid(w, h, bounds, mode.timeMs);
-  drawMarkers(w, h, bounds);
+  drawGridOn(targetCtx, w, h, bounds, mode.timeMs, isFull);
+  drawMinMaxMarkersOn(targetCtx, w, h, bounds);
+  drawReferenceMarkersOn(targetCtx, w, h, bounds);
 
   if (data.length < 2) return;
 
@@ -532,110 +579,173 @@ function drawChart() {
     return Math.max(0, Math.min(h, y));
   };
 
-  ctx.save();
-  ctx.lineWidth = 2.4;
-  ctx.strokeStyle = 'rgba(89,215,255,.95)';
-  ctx.shadowColor = 'rgba(89,215,255,.35)';
-  ctx.shadowBlur = 9;
-  ctx.beginPath();
+  targetCtx.save();
+  targetCtx.lineWidth = isFull ? 2.8 : 2.4;
+  targetCtx.strokeStyle = 'rgba(89,215,255,.95)';
+  targetCtx.shadowColor = 'rgba(89,215,255,.35)';
+  targetCtx.shadowBlur = isFull ? 12 : 9;
+  targetCtx.beginPath();
 
   data.forEach((p, i) => {
     const x = xOf(p.t);
     const y = yOf(p.v);
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
+    if (i === 0) targetCtx.moveTo(x, y);
+    else targetCtx.lineTo(x, y);
   });
 
-  ctx.stroke();
-  ctx.restore();
+  targetCtx.stroke();
+  targetCtx.restore();
 }
 
-function drawGrid(w, h, bounds, timeMs) {
-  ctx.clearRect(0, 0, w, h);
-  ctx.fillStyle = '#050b10';
-  ctx.fillRect(0, 0, w, h);
+function drawGridOn(targetCtx, w, h, bounds, timeMs, isFull = false) {
+  targetCtx.clearRect(0, 0, w, h);
+  targetCtx.fillStyle = '#050b10';
+  targetCtx.fillRect(0, 0, w, h);
 
-  const majorX = 8;
-  const majorY = 6;
+  const majorX = isFull ? 10 : 8;
+  const majorY = isFull ? 8 : 6;
 
-  ctx.lineWidth = 1;
+  targetCtx.lineWidth = 1;
 
   for (let i = 0; i <= majorX * 5; i++) {
     const x = i * w / (majorX * 5);
-    ctx.strokeStyle = i % 5 === 0 ? 'rgba(89,215,255,.18)' : 'rgba(89,215,255,.055)';
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, h);
-    ctx.stroke();
+    targetCtx.strokeStyle = i % 5 === 0 ? 'rgba(89,215,255,.18)' : 'rgba(89,215,255,.055)';
+    targetCtx.beginPath();
+    targetCtx.moveTo(x, 0);
+    targetCtx.lineTo(x, h);
+    targetCtx.stroke();
   }
 
   for (let i = 0; i <= majorY * 5; i++) {
     const y = i * h / (majorY * 5);
-    ctx.strokeStyle = i % 5 === 0 ? 'rgba(89,215,255,.18)' : 'rgba(89,215,255,.055)';
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(w, y);
-    ctx.stroke();
+    targetCtx.strokeStyle = i % 5 === 0 ? 'rgba(89,215,255,.18)' : 'rgba(89,215,255,.055)';
+    targetCtx.beginPath();
+    targetCtx.moveTo(0, y);
+    targetCtx.lineTo(w, y);
+    targetCtx.stroke();
   }
 
-  ctx.strokeStyle = 'rgba(232,241,248,.18)';
-  ctx.beginPath();
-  ctx.moveTo(0, h / 2);
-  ctx.lineTo(w, h / 2);
-  ctx.stroke();
+  targetCtx.strokeStyle = 'rgba(232,241,248,.18)';
+  targetCtx.beginPath();
+  targetCtx.moveTo(0, h / 2);
+  targetCtx.lineTo(w, h / 2);
+  targetCtx.stroke();
 
-  ctx.fillStyle = 'rgba(232,241,248,.50)';
-  ctx.font = '10px system-ui';
-  ctx.textBaseline = 'top';
+  targetCtx.fillStyle = 'rgba(232,241,248,.50)';
+  targetCtx.font = isFull ? '11px system-ui' : '10px system-ui';
+  targetCtx.textBaseline = 'top';
+  targetCtx.textAlign = 'left';
 
   for (let i = 0; i <= majorY; i++) {
     const value = bounds.max - (bounds.max - bounds.min) * i / majorY;
     const y = i * h / majorY;
-    ctx.fillText(`${value.toFixed(value >= 10 ? 0 : 1)} V`, 7, Math.min(h - 15, y + 4));
+    targetCtx.fillText(`${value.toFixed(value >= 10 ? 0 : 1)} V`, 7, Math.min(h - 15, y + 4));
   }
 
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'bottom';
+  targetCtx.textAlign = 'right';
+  targetCtx.textBaseline = 'bottom';
   for (let i = 1; i <= majorX; i++) {
     const t = (timeMs / 1000) * (majorX - i) / majorX;
     const x = i * w / majorX;
-    ctx.fillText(`-${t.toFixed(t >= 10 ? 0 : 1)}s`, x - 4, h - 5);
+    targetCtx.fillText(`-${t.toFixed(t >= 10 ? 0 : 1)}s`, x - 4, h - 5);
   }
-  ctx.textAlign = 'left';
+  targetCtx.textAlign = 'left';
 }
 
-function drawMarkers(w, h, bounds) {
-  ctx.save();
-  ctx.font = '10px system-ui';
-  ctx.fillStyle = 'rgba(232,241,248,.58)';
-  ctx.strokeStyle = 'rgba(142,231,166,.38)';
-  ctx.setLineDash([5, 5]);
+function lineY(value, h, bounds) {
+  return h - ((value - bounds.min) * h / (bounds.max - bounds.min));
+}
 
-  const lineAt = (value, label) => {
+function drawHorizontalDashedLine(targetCtx, w, y, color, width = 1.3) {
+  targetCtx.save();
+  targetCtx.strokeStyle = color;
+  targetCtx.lineWidth = width;
+  targetCtx.setLineDash([6, 7]);
+  targetCtx.beginPath();
+  targetCtx.moveTo(0, y);
+  targetCtx.lineTo(w, y);
+  targetCtx.stroke();
+  targetCtx.restore();
+}
+
+function drawMinMaxMarkersOn(targetCtx, w, h, bounds) {
+  const stats = currentStats();
+  if (!Number.isFinite(stats.min) || !Number.isFinite(stats.max)) return;
+
+  if (stats.max >= bounds.min && stats.max <= bounds.max) {
+    drawHorizontalDashedLine(targetCtx, w, lineY(stats.max, h, bounds), 'rgba(255,107,107,.72)', 1.4);
+  }
+
+  if (stats.min >= bounds.min && stats.min <= bounds.max && Math.abs(stats.max - stats.min) > 0.02) {
+    drawHorizontalDashedLine(targetCtx, w, lineY(stats.min, h, bounds), 'rgba(92,169,255,.72)', 1.4);
+  }
+}
+
+function drawReferenceMarkersOn(targetCtx, w, h, bounds) {
+  const values = [];
+
+  if (selectedMode === 'volt') values.push(12.6);
+  if (selectedMode === 'crank') values.push(12.6, 10.0);
+  if (selectedMode === 'charge') values.push(14.4, 13.8);
+  if (selectedMode === 'sensor') values.push(5.0, 0.0);
+
+  targetCtx.save();
+  targetCtx.strokeStyle = 'rgba(142,231,166,.24)';
+  targetCtx.lineWidth = 1;
+  targetCtx.setLineDash([3, 7]);
+
+  values.forEach(value => {
     if (value < bounds.min || value > bounds.max) return;
-    const y = h - ((value - bounds.min) * h / (bounds.max - bounds.min));
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(w, y);
-    ctx.stroke();
-    ctx.fillText(label, 8, Math.max(5, y + 5));
-  };
+    const y = lineY(value, h, bounds);
+    targetCtx.beginPath();
+    targetCtx.moveTo(0, y);
+    targetCtx.lineTo(w, y);
+    targetCtx.stroke();
+  });
 
-  if (selectedMode === 'volt') lineAt(12.6, '12.6 V');
-  if (selectedMode === 'crank') {
-    lineAt(12.6, '12.6 V');
-    lineAt(10.0, '10.0 V');
-  }
-  if (selectedMode === 'charge') {
-    lineAt(14.4, '14.4 V');
-    lineAt(13.8, '13.8 V');
-  }
-  if (selectedMode === 'sensor') {
-    lineAt(5.0, '5 V');
-    lineAt(0.0, '0 V');
-  }
+  targetCtx.restore();
+}
 
-  ctx.restore();
+function updateFullMetrics() {
+  if (!$('fullMin')) return;
+  const stats = currentStats();
+  $('fullTitle').textContent = modes[selectedMode].title;
+  $('fullSub').textContent = modes[selectedMode].subtitle;
+  $('fullMin').textContent = formatMetric(stats.min, 'V', 2);
+  $('fullMax').textContent = formatMetric(stats.max, 'V', 2);
+  $('fullPico').textContent = formatMetric(stats.p2p, 'V', 2);
+  $('fullExtraLabel').textContent = selectedMode === 'pulse' ? 'Pulsos' : 'Rango';
+  $('fullExtra').textContent = selectedMode === 'pulse' ? ($('m1v').textContent || '--') : (lastRange || '--');
+  fullFreeze.textContent = frozen ? 'SEGUIR' : 'CONGELAR';
+  fullFreeze.classList.toggle('on', frozen);
+}
+
+function openFullChart() {
+  if (chartFullscreen) return;
+  chartFullscreen = true;
+  chartOverlay.classList.add('active');
+  chartOverlay.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('chart-open');
+  updateFullMetrics();
+  setTimeout(() => {
+    resizeOneCanvas(fullCanvas, fullCtx);
+    drawFullChart();
+  }, 30);
+}
+
+function closeFullChart() {
+  if (!chartFullscreen) return;
+  chartFullscreen = false;
+  chartOverlay.classList.remove('active');
+  chartOverlay.setAttribute('aria-hidden', 'true');
+  document.body.classList.remove('chart-open');
+}
+
+function handleChartAreaKey(event) {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    openFullChart();
+  }
 }
 
 function toggleVoice() {
@@ -740,6 +850,7 @@ function toggleFreeze() {
   freezeBtn.textContent = frozen ? 'SEGUIR' : 'CONGELAR';
   freezeBtn.classList.toggle('on', frozen);
   updateReadout();
+  updateFullMetrics();
 }
 
 document.addEventListener('visibilitychange', async () => {
@@ -753,6 +864,14 @@ voiceBtn.addEventListener('click', toggleVoice);
 wakeBtn.addEventListener('click', toggleWakeLock);
 freezeBtn.addEventListener('click', toggleFreeze);
 autoBtn.addEventListener('click', autoScale);
+chartOpenArea.addEventListener('click', openFullChart);
+chartOpenArea.addEventListener('keydown', handleChartAreaKey);
+fullClose.addEventListener('click', closeFullChart);
+fullClose2.addEventListener('click', closeFullChart);
+fullFreeze.addEventListener('click', toggleFreeze);
+fullClear.addEventListener('click', clearChart);
+chartOverlay.addEventListener('click', (event) => { if (event.target === chartOverlay) closeFullChart(); });
+document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeFullChart(); });
 
 window.addEventListener('resize', resizeCanvas);
 window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 200));

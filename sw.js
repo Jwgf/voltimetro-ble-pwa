@@ -1,4 +1,4 @@
-const CACHE = 'probador-automotor-ble-v2';
+const CACHE = 'probador-automotor-ble-v3';
 const ASSETS = [
   './',
   './index.html',

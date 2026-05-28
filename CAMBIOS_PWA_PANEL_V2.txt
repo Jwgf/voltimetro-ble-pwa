@@ -1,0 +1,23 @@
+Probador Automotor BLE - PWA panel v2
+
+Cambios realizados sobre panel v1:
+- Se eliminan de la pantalla principal los avisos inferiores de estado técnico: BLE inactivo / cantidad de muestras.
+- Se mantienen esos datos sólo como telemetría interna oculta para no romper la lógica existente.
+- La gráfica principal ahora se puede tocar para abrir una vista ampliada.
+- La vista ampliada muestra grilla más grande, valores Min / Max / Pico / Rango y botones CONGELAR / LIMPIAR / CERRAR.
+- Las líneas punteadas de máximo y mínimo ya no escriben valores dentro de la gráfica.
+- Línea MAX: rojo suave. Texto Max: mismo color.
+- Línea MIN: azul suave. Texto Min: mismo color.
+- Pico queda destacado en ámbar.
+- Se conservan BLE GATT, reconexión, voz y PANTALLA ON/OFF.
+- No se agregan textos visibles de prueba, simulación, aproximado ni osciloscopio.
+
+Archivos modificados:
+- index.html
+- style.css
+- app.js
+- sw.js
+
+Notas:
+- El formato de datos BLE existente se mantiene: tension,rango.
+- También se mantiene la preparación para JSON futuro con v/voltage y range.
