@@ -1,0 +1,25 @@
+Probador Automotor BLE - PWA panel v1
+
+Cambios realizados:
+- Se reemplaza la interfaz simple del voltímetro por una estética tipo instrumento profesional.
+- Se mantiene Web Bluetooth GATT con el servicio y característica ya usados.
+- Se mantiene reconexión BLE al mismo dispositivo autorizado.
+- Se mantiene voz Web Speech con ajuste es-US / rate 0.92 / pitch 0.75.
+- Se mantiene botón PANTALLA ON/OFF con Screen Wake Lock.
+- Se agrega gráfica protagonista con grilla de tensión y tiempo.
+- Se agregan modos visuales:
+  Voltímetro, Arranque, Carga, Sensor, PWM, Inyector, Forma y Pulsos.
+- Se eliminan textos visibles de prueba/simulación/aproximada/osciloscopio.
+- Se elimina ADC_BAT de la interfaz; queda sólo la medición por entrada amarilla.
+
+Archivos modificados:
+- index.html
+- style.css
+- app.js
+- manifest.json
+- sw.js
+
+Notas:
+- El firmware actual puede seguir enviando el formato existente: tension,rango
+  Ejemplo: 12.64,50V
+- La PWA también queda preparada para recibir JSON futuro con campos v/voltage y range.

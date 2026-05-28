@@ -2,51 +2,77 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <title>Voltímetro Taller</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#111111">
+  <title>Probador Automotor BLE</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#090d12">
   <link rel="manifest" href="./manifest.json">
   <link rel="stylesheet" href="./style.css">
 </head>
 <body>
   <main class="app">
-    <section class="panel top">
-      <div>
-        <h1>Voltímetro Taller</h1>
-        <p id="status">Sin conectar</p>
+    <section class="topbar">
+      <div class="brand">
+        <strong>Probador Automotor BLE</strong>
+        <span id="subTitle">Entrada amarilla · rango automático</span>
       </div>
-      <div id="badge" class="badge off">OFF</div>
+      <button id="connectBtn" class="statusBtn" type="button">
+        <span id="statusDot" class="dot off"></span>
+        <span id="connText">Conectar</span>
+      </button>
     </section>
 
-    <section class="reading">
-      <div id="voltage" class="voltage">--.--</div>
-      <div class="unit">V</div>
-      <div id="range" class="range">RANGO --</div>
+    <section class="scope-card">
+      <div class="scope-header">
+        <div>
+          <div class="mode-title" id="modeTitle">Voltímetro</div>
+          <div class="status-line" id="status">Sin conectar</div>
+        </div>
+        <div class="range-pill" id="rangePill">Rango --</div>
+      </div>
+
+      <div class="canvas-wrap">
+        <canvas id="chart"></canvas>
+        <div class="axis-badge v" id="vScale">Auto V/div</div>
+        <div class="axis-badge t" id="tScale">Tiempo</div>
+      </div>
+
+      <div class="readout">
+        <div class="main-value">
+          <div class="label" id="mainLabel">Tensión actual</div>
+          <div><span class="value" id="voltage">--.--</span><span class="unit" id="mainUnit">V</span></div>
+          <div class="sub" id="mainSub">Esperando lectura</div>
+        </div>
+        <div class="metric-grid">
+          <div class="metric"><div class="k" id="m1k">Mín</div><div class="v" id="m1v">--</div></div>
+          <div class="metric"><div class="k" id="m2k">Máx</div><div class="v" id="m2v">--</div></div>
+          <div class="metric"><div class="k" id="m3k">Pico</div><div class="v" id="m3v">--</div></div>
+          <div class="metric"><div class="k" id="m4k">Rango</div><div class="v" id="m4v">--</div></div>
+        </div>
+      </div>
     </section>
 
-    <section class="buttons">
-      <button id="connectBtn" class="mainBtn">CONECTAR VOLTÍMETRO</button>
-      <button id="voiceBtn" class="secondaryBtn">VOZ: OFF</button>
-      <button id="wakeBtn" class="secondaryBtn">PANTALLA: OFF</button>
-      <button id="clearBtn" class="secondaryBtn">LIMPIAR GRÁFICO</button>
+    <section class="actions" id="actions">
+      <button id="autoBtn" class="act primary" type="button">AUTO</button>
+      <button id="freezeBtn" class="act" type="button">CONGELAR</button>
+      <button id="voiceBtn" class="act" type="button">VOZ OFF</button>
+      <button id="wakeBtn" class="act" type="button">PANTALLA OFF</button>
     </section>
 
-    <section class="panel">
-      <canvas id="chart" width="900" height="280"></canvas>
+    <section class="mode-card">
+      <div class="modes" id="modes"></div>
     </section>
 
-    <section class="panel small">
-      <div class="row"><span>Última lectura:</span><strong id="lastRaw">---</strong></div>
-      <div class="row"><span>Muestras:</span><strong id="samples">0</strong></div>
-      <div class="row"><span>Conexión:</span><strong id="connState">---</strong></div>
-    </section>
+    <div class="footer-strip">
+      <span>BLE <b id="bleState">inactivo</b></span>
+      <span><b id="samples">0</b> muestras</span>
+    </div>
 
-    <section class="note">
-      <p>
-        Prueba de visor PWA con datos simulados enviados por ESP32 vía BLE GATT.
-        En celular debe abrirse desde HTTPS para que Web Bluetooth funcione.
-      </p>
-    </section>
+    <div class="hidden-telemetry" aria-hidden="true">
+      <span id="lastRaw">---</span>
+      <span id="range">RANGO --</span>
+      <span id="connState">---</span>
+      <span id="badge">OFF</span>
+    </div>
   </main>
 
   <script src="./app.js"></script>
