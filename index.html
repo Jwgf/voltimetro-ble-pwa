@@ -21,6 +21,15 @@
       </button>
     </section>
 
+    <section id="installBox" class="install-box hidden" aria-live="polite">
+      <div class="install-copy">
+        <strong id="installTitle">Instalar acceso directo</strong>
+        <span id="installText">Abrí el instrumento desde el ícono del celular.</span>
+      </div>
+      <button id="installBtn" class="install-btn" type="button">INSTALAR</button>
+      <button id="installClose" class="install-close" type="button" aria-label="Ocultar instalación">×</button>
+    </section>
+
     <section class="scope-card">
       <div class="scope-header">
         <div>
@@ -72,6 +81,15 @@
       <span id="badge">OFF</span>
     </div>
   </main>
+
+  <section id="installHelp" class="install-help" aria-hidden="true">
+    <div class="install-help-panel" role="dialog" aria-modal="true" aria-label="Instalar en iPhone">
+      <button id="installHelpClose" class="icon-close" type="button" aria-label="Cerrar ayuda">×</button>
+      <h2>Instalar en iPhone</h2>
+      <p>Desde Safari, tocá <b>Compartir</b> y luego <b>Agregar a pantalla de inicio</b>.</p>
+      <button id="installHelpOk" class="act primary" type="button">ENTENDIDO</button>
+    </div>
+  </section>
 
   <section id="chartOverlay" class="chart-overlay" aria-hidden="true">
     <div class="chart-full-panel" role="dialog" aria-modal="true" aria-label="Gráfico ampliado">

@@ -26,6 +26,47 @@ let lastRange = '--';
 const history = [];
 const MAX_POINTS = 300;
 
+let deferredInstallPrompt = null;
+let installDismissed = false;
+let priorityAudioUnlocked = false;
+const priorityLastPlayed = Object.create(null);
+const priorityAudioElements = Object.create(null);
+let lastPulseAudioCount = 0;
+
+const PRIORITY_AUDIO = {
+  conectado: './audio/conectado.mp3',
+  desconectado: './audio/desconectado.mp3',
+  capturaLista: './audio/captura_lista.mp3',
+  tensionBaja: './audio/tension_baja.mp3',
+  tensionAlta: './audio/tension_alta.mp3',
+  cargaNormal: './audio/carga_normal.mp3',
+  cargaAlta: './audio/carga_alta.mp3',
+  bateriaBaja: './audio/bateria_baja.mp3',
+  arranqueDetectado: './audio/arranque_detectado.mp3',
+  pulsoDetectado: './audio/pulso_detectado.mp3',
+  senalPresente: './audio/senal_presente.mp3',
+  sinSenal: './audio/sin_senal.mp3',
+  modoVoltimetro: './audio/modo_voltimetro.mp3',
+  modoArranque: './audio/modo_arranque.mp3',
+  modoCarga: './audio/modo_carga.mp3',
+  modoSensor: './audio/modo_sensor.mp3',
+  modoPwm: './audio/modo_pwm.mp3',
+  modoInyector: './audio/modo_inyector.mp3',
+  modoForma: './audio/modo_forma.mp3',
+  modoPulsos: './audio/modo_pulsos.mp3'
+};
+
+const MODE_AUDIO = {
+  volt: 'modoVoltimetro',
+  crank: 'modoArranque',
+  charge: 'modoCarga',
+  sensor: 'modoSensor',
+  pwm: 'modoPwm',
+  inj: 'modoInyector',
+  form: 'modoForma',
+  pulse: 'modoPulsos'
+};
+
 const modes = {
   volt: {
     icon: 'V', label: 'Voltímetro', title: 'Voltímetro', subtitle: 'Entrada amarilla · rango automático',
@@ -93,6 +134,16 @@ const fullClose = $('fullClose');
 const fullClose2 = $('fullClose2');
 const fullFreeze = $('fullFreeze');
 const fullClear = $('fullClear');
+
+const installBox = $('installBox');
+const installBtn = $('installBtn');
+const installClose = $('installClose');
+const installTitle = $('installTitle');
+const installText = $('installText');
+const installHelp = $('installHelp');
+const installHelpClose = $('installHelpClose');
+const installHelpOk = $('installHelpOk');
+
 let chartFullscreen = false;
 
 function setStatus(text, connected = false) {
@@ -140,6 +191,8 @@ function setMode(modeKey) {
   updateModeUi();
   updateReadout();
   drawChart();
+  lastPulseAudioCount = 0;
+  playPriorityAudio(MODE_AUDIO[modeKey], 1200);
 }
 
 function updateModeUi() {
@@ -196,6 +249,7 @@ async function connectKnownDevice() {
     characteristic.addEventListener('characteristicvaluechanged', onData);
 
     setStatus(device.name || 'Conectado', true);
+    playPriorityAudio('conectado', 3500);
   } catch (err) {
     console.error(err);
     setStatus('No se pudo conectar');
@@ -206,6 +260,7 @@ async function connectKnownDevice() {
 
 function onDisconnected() {
   setStatus('Sin señal. Reintentando...');
+  playPriorityAudio('desconectado', 3500);
 
   characteristic = null;
   server = null;
@@ -255,6 +310,7 @@ function onData(event) {
   }
 
   speakIfNeeded(lastVoltage);
+  handlePriorityEvents();
 }
 
 function parsePacket(text) {
@@ -754,6 +810,7 @@ function toggleVoice() {
   voiceBtn.classList.toggle('on', voiceEnabled);
 
   if (voiceEnabled) {
+    stopPriorityAudio();
     speakText('Voz activada');
   } else if ('speechSynthesis' in window) {
     speechSynthesis.cancel();
@@ -851,6 +908,155 @@ function toggleFreeze() {
   freezeBtn.classList.toggle('on', frozen);
   updateReadout();
   updateFullMetrics();
+  if (frozen) playPriorityAudio('capturaLista', 2500);
+}
+
+
+function preloadPriorityAudio() {
+  Object.entries(PRIORITY_AUDIO).forEach(([key, src]) => {
+    if (!priorityAudioElements[key]) {
+      const audio = new Audio(src);
+      audio.preload = 'auto';
+      audio.volume = 1;
+      priorityAudioElements[key] = audio;
+    }
+  });
+}
+
+function unlockPriorityAudio() {
+  if (priorityAudioUnlocked) return;
+  priorityAudioUnlocked = true;
+  preloadPriorityAudio();
+}
+
+function stopPriorityAudio() {
+  Object.values(priorityAudioElements).forEach((audio) => {
+    try {
+      audio.pause();
+      audio.currentTime = 0;
+    } catch (err) {
+      console.warn('No se pudo detener audio prioritario', err);
+    }
+  });
+}
+
+async function playPriorityAudio(key, minGapMs = 5000) {
+  if (!key || voiceEnabled) return;
+  unlockPriorityAudio();
+
+  const src = PRIORITY_AUDIO[key];
+  if (!src) return;
+
+  const now = Date.now();
+  if (priorityLastPlayed[key] && now - priorityLastPlayed[key] < minGapMs) return;
+  priorityLastPlayed[key] = now;
+
+  try {
+    const audio = priorityAudioElements[key] || new Audio(src);
+    priorityAudioElements[key] = audio;
+    audio.currentTime = 0;
+    await audio.play();
+  } catch (err) {
+    // El navegador puede bloquear audio hasta que haya una acción del usuario.
+    console.warn('Audio prioritario bloqueado o no disponible:', key, err);
+  }
+}
+
+function handlePriorityEvents() {
+  if (voiceEnabled || !Number.isFinite(lastVoltage)) return;
+
+  const stats = currentStats();
+  const pulses = analyzePulses(stats.points);
+
+  if (selectedMode === 'crank' && Number.isFinite(stats.min) && stats.min < 10.0) {
+    playPriorityAudio('bateriaBaja', 15000);
+  }
+
+  if (selectedMode === 'charge') {
+    if (lastVoltage > 15.0) {
+      playPriorityAudio('cargaAlta', 15000);
+    } else if (lastVoltage >= 13.3 && lastVoltage <= 14.8) {
+      playPriorityAudio('cargaNormal', 30000);
+    }
+  }
+
+  if (['pwm', 'inj', 'pulse'].includes(selectedMode) && pulses && pulses.count > lastPulseAudioCount) {
+    playPriorityAudio('pulsoDetectado', 5000);
+  }
+
+  if (pulses) lastPulseAudioCount = pulses.count;
+}
+
+function isStandalonePwa() {
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+
+function isIOSDevice() {
+  return /iphone|ipad|ipod/i.test(navigator.userAgent || '');
+}
+
+function showInstallBox({ title = 'Instalar acceso directo', text = 'Abrí el instrumento desde el ícono del celular.' } = {}) {
+  if (!installBox || installDismissed || isStandalonePwa()) return;
+  installTitle.textContent = title;
+  installText.textContent = text;
+  installBox.classList.remove('hidden');
+}
+
+function hideInstallBox() {
+  if (installBox) installBox.classList.add('hidden');
+}
+
+function openInstallHelp() {
+  if (!installHelp) return;
+  installHelp.classList.add('active');
+  installHelp.setAttribute('aria-hidden', 'false');
+}
+
+function closeInstallHelp() {
+  if (!installHelp) return;
+  installHelp.classList.remove('active');
+  installHelp.setAttribute('aria-hidden', 'true');
+}
+
+async function handleInstallClick() {
+  if (deferredInstallPrompt) {
+    deferredInstallPrompt.prompt();
+    try {
+      await deferredInstallPrompt.userChoice;
+    } catch (err) {
+      console.warn('Instalación PWA sin respuesta final', err);
+    }
+    deferredInstallPrompt = null;
+    hideInstallBox();
+    return;
+  }
+
+  if (isIOSDevice()) openInstallHelp();
+}
+
+function setupInstallPrompt() {
+  if (isStandalonePwa()) {
+    hideInstallBox();
+    return;
+  }
+
+  window.addEventListener('beforeinstallprompt', (event) => {
+    event.preventDefault();
+    deferredInstallPrompt = event;
+    showInstallBox();
+  });
+
+  window.addEventListener('appinstalled', () => {
+    deferredInstallPrompt = null;
+    hideInstallBox();
+  });
+
+  if (isIOSDevice()) {
+    setTimeout(() => showInstallBox({
+      title: 'Instalar en iPhone',
+      text: 'Safari: Compartir → Agregar a pantalla de inicio.'
+    }), 900);
+  }
 }
 
 document.addEventListener('visibilitychange', async () => {
@@ -858,6 +1064,13 @@ document.addEventListener('visibilitychange', async () => {
     await requestWakeLock();
   }
 });
+
+document.addEventListener('pointerdown', unlockPriorityAudio, { once: true });
+installBtn?.addEventListener('click', handleInstallClick);
+installClose?.addEventListener('click', () => { installDismissed = true; hideInstallBox(); });
+installHelpClose?.addEventListener('click', closeInstallHelp);
+installHelpOk?.addEventListener('click', closeInstallHelp);
+installHelp?.addEventListener('click', (event) => { if (event.target === installHelp) closeInstallHelp(); });
 
 connectBtn.addEventListener('click', connect);
 voiceBtn.addEventListener('click', toggleVoice);
@@ -876,6 +1089,8 @@ document.addEventListener('keydown', (event) => { if (event.key === 'Escape') cl
 window.addEventListener('resize', resizeCanvas);
 window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 200));
 
+preloadPriorityAudio();
+setupInstallPrompt();
 buildModes();
 updateModeUi();
 updateReadout();

@@ -1,0 +1,34 @@
+Probador Automotor BLE - PWA panel v3
+
+Cambios realizados sobre panel v2:
+
+1) Instalación PWA
+- Se agrega botón INSTALAR inteligente.
+- En Android/Chrome se muestra cuando el navegador habilita beforeinstallprompt.
+- En iPhone/Safari muestra ayuda breve: Compartir -> Agregar a pantalla de inicio.
+- Si la PWA ya está instalada/abierta en modo standalone, no se muestra.
+- Se agregan iconos 192x192 y 512x512 al manifest para mejorar instalabilidad.
+
+2) Audios prioritarios digitalizados
+- Se agrega carpeta audio/ con avisos fijos en MP3.
+- Avisos prioritarios activos por defecto cuando VOZ está en OFF.
+- Si el usuario activa el botón VOZ actual, se desactivan los audios prioritarios y se mantiene la lectura hablada de valores como estaba.
+- No se cambia el nombre, cadencia ni comportamiento base del botón VOZ.
+
+3) Eventos con audio prioritario integrados
+- Conectado.
+- Desconectado.
+- Cambio de modo: Voltímetro, Arranque, Carga, Sensor, PWM, Inyector, Forma, Pulsos.
+- Captura lista al congelar.
+- Batería baja en modo Arranque si el mínimo cae por debajo del umbral.
+- Carga normal / carga alta en modo Carga.
+- Pulso detectado en modos PWM, Inyector y Pulsos.
+
+4) Cache offline
+- Service worker actualizado a probador-automotor-ble-v4.
+- Se cachean index.html, style.css, app.js, manifest, iconos y audios MP3.
+
+Notas:
+- La estética principal de panel v2 se mantiene.
+- BLE, reconexión, gráfico ampliado, Wake Lock y voz variable se mantienen.
+- Los MP3 pueden reemplazarse en el futuro manteniendo exactamente los mismos nombres.
