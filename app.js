@@ -34,6 +34,7 @@ let priorityAudioUnlocked = false;
 const priorityLastPlayed = Object.create(null);
 const priorityAudioElements = Object.create(null);
 let lastPulseAudioCount = 0;
+let priorityEventsMutedUntil = 0;
 
 const PRIORITY_AUDIO = {
   conectado: './audio/conectado.mp3',
@@ -104,7 +105,7 @@ const modes = {
   },
   inj: {
     icon: '▮', label: 'Inyector', title: 'Inyector', subtitle: 'Pulso · pico · duración',
-    mainLabel: 'Tiempo de inyección', unit: 'ms', vMin: 0, vMax: 120, timeMs: 80, vScale: '20 V/div', tScale: '10 ms/div'
+    mainLabel: 'Tiempo de inyección', unit: 'ms', vMin: 0, vMax: 50, timeMs: 4000, vScale: '10 V/div', tScale: '500 ms/div'
   },
   form: {
     icon: '▱', label: 'Forma', title: 'Forma de onda', subtitle: 'Captura de señal',
@@ -198,6 +199,7 @@ function buildModes() {
 }
 
 function setMode(modeKey) {
+  const changed = selectedMode !== modeKey;
   selectedMode = modeKey;
   frozen = false;
   freezeBtn.textContent = 'CONGELAR';
@@ -206,7 +208,14 @@ function setMode(modeKey) {
   updateReadout();
   drawChart();
   lastPulseAudioCount = 0;
-  playPriorityAudio(MODE_AUDIO[modeKey], 1200);
+
+  if (changed) {
+    // Evita que un aviso de evento, por ejemplo "pulso detectado", se encime
+    // con el aviso del modo recién seleccionado.
+    priorityEventsMutedUntil = Date.now() + 2600;
+    playPriorityAudio(MODE_AUDIO[modeKey], 2500);
+  }
+
   sendModeCommand(modeKey);
 }
 
@@ -1010,6 +1019,7 @@ async function playPriorityAudio(key, minGapMs = 5000) {
   priorityLastPlayed[key] = now;
 
   try {
+    stopPriorityAudio();
     const audio = priorityAudioElements[key] || new Audio(src);
     priorityAudioElements[key] = audio;
     audio.currentTime = 0;
@@ -1022,6 +1032,7 @@ async function playPriorityAudio(key, minGapMs = 5000) {
 
 function handlePriorityEvents() {
   if (voiceEnabled || !Number.isFinite(lastVoltage)) return;
+  if (Date.now() < priorityEventsMutedUntil) return;
 
   const stats = currentStats();
   const pulses = analyzePulses(stats.points);

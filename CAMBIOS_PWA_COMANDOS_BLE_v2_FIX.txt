@@ -1,0 +1,26 @@
+Probador Automotor BLE - PWA COMANDOS BLE v2 FIX
+
+Cambios puntuales:
+
+1) Modo Inyector
+- Se ajusta la base de tiempo visible de 80 ms a 4000 ms.
+- Motivo: la PWA actual recibe un valor por notificacion BLE, no bloques de captura.
+  Con 80 ms y notificaciones cada ~50 ms se veia casi una linea horizontal.
+- Se cambia escala vertical a 0-50 V para que el pico/meseta del firmware simulado se vea claro.
+
+2) Avisos hablados / audios prioritarios
+- Se evita superposicion de avisos al cambiar de modo.
+- Al seleccionar un modo se silencian avisos de evento por 2,6 s.
+- Se detiene cualquier audio prioritario en curso antes de reproducir uno nuevo.
+- Si se toca nuevamente el mismo modo, se reenvia el comando BLE pero no repite el audio de modo.
+
+3) Cache
+- Service worker actualizado a probador-automotor-ble-v7-fix-inyector-audio.
+
+No se modifica:
+- Estetica general.
+- Boton VOZ, nombre, cadencia ni voz de valores variables.
+- Audios MP3.
+- UUIDs BLE.
+- Grafico ampliado.
+- Boton instalar.
