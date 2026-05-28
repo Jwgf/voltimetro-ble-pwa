@@ -1,4 +1,4 @@
-﻿const CACHE = 'probador-automotor-ble-v5-audios-neurales';
+const CACHE = 'probador-automotor-ble-v6-comandos-ble';
 const ASSETS = [
   './',
   './index.html',

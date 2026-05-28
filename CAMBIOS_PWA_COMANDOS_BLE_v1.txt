@@ -1,0 +1,27 @@
+Probador Automotor BLE - PWA comandos BLE v1
+
+Cambios realizados:
+- Se conserva la PWA actual con interfaz aprobada, audios neurales, botón INSTALAR, gráfico ampliado, VOZ y PANTALLA ON/OFF.
+- Se agrega una característica BLE de comandos opcional: 6e400002-b5a3-f393-e0a9-e50e24dcca9e.
+- Al tocar un modo, la PWA intenta enviar el comando correspondiente al ESP32 simulado.
+- Si el firmware no tiene la característica de comandos, la PWA sigue funcionando igual que antes.
+- Se actualiza el cache del service worker a probador-automotor-ble-v6-comandos-ble.
+
+Mapeo de botones:
+- Voltímetro -> MODE BATT
+- Arranque   -> MODE SUPPLY
+- Carga      -> MODE SUPPLY
+- Sensor     -> MODE SENSOR
+- PWM        -> MODE PWM
+- Inyector   -> MODE INJECTOR
+- Forma      -> MODE PIEZO
+- Pulsos     -> MODE CKP
+
+No se modificó:
+- UUID de servicio.
+- UUID de notificaciones de datos.
+- Formato de payload recibido: voltaje,rango,timestamp.
+- Estética principal.
+- Audios prioritarios.
+- Botón VOZ.
+- Wake Lock.

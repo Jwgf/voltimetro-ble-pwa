@@ -5,10 +5,12 @@
 
 const SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
 const VOLT_CHAR_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+const CMD_CHAR_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
 
 let device = null;
 let server = null;
 let characteristic = null;
+let commandCharacteristic = null;
 let reconnecting = false;
 
 let voiceEnabled = false;
@@ -66,6 +68,18 @@ const MODE_AUDIO = {
   form: 'modoForma',
   pulse: 'modoPulsos'
 };
+
+const MODE_COMMAND = {
+  volt: 'MODE BATT',
+  crank: 'MODE SUPPLY',
+  charge: 'MODE SUPPLY',
+  sensor: 'MODE SENSOR',
+  pwm: 'MODE PWM',
+  inj: 'MODE INJECTOR',
+  form: 'MODE PIEZO',
+  pulse: 'MODE CKP'
+};
+
 
 const modes = {
   volt: {
@@ -193,6 +207,7 @@ function setMode(modeKey) {
   drawChart();
   lastPulseAudioCount = 0;
   playPriorityAudio(MODE_AUDIO[modeKey], 1200);
+  sendModeCommand(modeKey);
 }
 
 function updateModeUi() {
@@ -245,11 +260,19 @@ async function connectKnownDevice() {
     const service = await server.getPrimaryService(SERVICE_UUID);
     characteristic = await service.getCharacteristic(VOLT_CHAR_UUID);
 
+    try {
+      commandCharacteristic = await service.getCharacteristic(CMD_CHAR_UUID);
+    } catch (cmdErr) {
+      commandCharacteristic = null;
+      console.warn('Característica BLE de comandos no disponible; la PWA seguirá funcionando sin control de modo.', cmdErr);
+    }
+
     await characteristic.startNotifications();
     characteristic.addEventListener('characteristicvaluechanged', onData);
 
     setStatus(device.name || 'Conectado', true);
     playPriorityAudio('conectado', 3500);
+    sendModeCommand(selectedMode);
   } catch (err) {
     console.error(err);
     setStatus('No se pudo conectar');
@@ -263,6 +286,7 @@ function onDisconnected() {
   playPriorityAudio('desconectado', 3500);
 
   characteristic = null;
+  commandCharacteristic = null;
   server = null;
 
   retryReconnect();
@@ -802,6 +826,40 @@ function handleChartAreaKey(event) {
     event.preventDefault();
     openFullChart();
   }
+}
+
+
+function commandForMode(modeKey) {
+  return MODE_COMMAND[modeKey] || null;
+}
+
+async function sendBleCommand(text) {
+  if (!text || !commandCharacteristic) return false;
+
+  try {
+    const payload = new TextEncoder().encode(text.trim() + '\n');
+
+    if (typeof commandCharacteristic.writeValueWithoutResponse === 'function') {
+      await commandCharacteristic.writeValueWithoutResponse(payload);
+    } else if (typeof commandCharacteristic.writeValueWithResponse === 'function') {
+      await commandCharacteristic.writeValueWithResponse(payload);
+    } else {
+      await commandCharacteristic.writeValue(payload);
+    }
+
+    console.log('Comando BLE enviado:', text);
+    return true;
+  } catch (err) {
+    console.warn('No se pudo enviar comando BLE:', text, err);
+    return false;
+  }
+}
+
+function sendModeCommand(modeKey) {
+  const command = commandForMode(modeKey);
+  if (!command) return;
+  // Intencionalmente no esperamos la promesa: el cambio visual de pantalla no debe depender del firmware.
+  sendBleCommand(command);
 }
 
 function toggleVoice() {
