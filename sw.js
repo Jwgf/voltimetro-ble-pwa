@@ -1,4 +1,4 @@
-const CACHE = 'probador-automotor-ble-v4';
+﻿const CACHE = 'probador-automotor-ble-v5-audios-neurales';
 const ASSETS = [
   './',
   './index.html',
@@ -47,3 +47,4 @@ self.addEventListener('fetch', event => {
     caches.match(event.request).then(cached => cached || fetch(event.request))
   );
 });
+
