@@ -1,0 +1,13 @@
+Rollback a la version estable anterior al fix de canvas wake.
+
+Base: PWA COMANDOS BLE v2 FIX INYECTOR AUDIO.
+Cambio unico: service worker cache actualizado a probador-automotor-ble-v9-rollback-estable-v7 para forzar que el celular deje de usar la version v8 rota.
+
+Restaurado:
+- Grafico normal estable previo.
+- Grafico grande funcionando.
+- Audios neurales.
+- Comandos BLE.
+- Modo inyector corregido.
+
+No incluye el parche v8 de redimensionado de canvas.

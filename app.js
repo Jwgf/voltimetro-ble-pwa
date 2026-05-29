@@ -576,25 +576,13 @@ function clearChart() {
   drawChart();
 }
 
-function canvasCssSize(targetCanvas) {
-  const rect = targetCanvas.getBoundingClientRect();
-  const parentRect = targetCanvas.parentElement ? targetCanvas.parentElement.getBoundingClientRect() : null;
-
-  const width = rect.width || targetCanvas.clientWidth || (parentRect ? parentRect.width : 0) || 1;
-  const height = rect.height || targetCanvas.clientHeight || (parentRect ? parentRect.height : 0) || 1;
-
-  return { width, height };
-}
-
-function resizeOneCanvas(targetCanvas, targetCtx, force = false) {
+function resizeOneCanvas(targetCanvas, targetCtx) {
   const dpr = window.devicePixelRatio || 1;
-  const size = canvasCssSize(targetCanvas);
-  const width = Math.max(1, Math.round(size.width * dpr));
-  const height = Math.max(1, Math.round(size.height * dpr));
+  const rect = targetCanvas.getBoundingClientRect();
+  const width = Math.max(1, Math.floor(rect.width * dpr));
+  const height = Math.max(1, Math.floor(rect.height * dpr));
 
-  // Al volver desde pantalla apagada algunos navegadores dejan el backing-store
-  // del canvas con un tamaño viejo. El force obliga a reconstruirlo.
-  if (force || targetCanvas.width !== width || targetCanvas.height !== height) {
+  if (targetCanvas.width !== width || targetCanvas.height !== height) {
     targetCanvas.width = width;
     targetCanvas.height = height;
   }
@@ -602,39 +590,14 @@ function resizeOneCanvas(targetCanvas, targetCtx, force = false) {
   targetCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
-function resizeCanvas(force = false) {
-  resizeOneCanvas(canvas, ctx, force);
+function resizeCanvas() {
+  resizeOneCanvas(canvas, ctx);
   drawChart();
 
   if (chartFullscreen) {
-    resizeOneCanvas(fullCanvas, fullCtx, force);
+    resizeOneCanvas(fullCanvas, fullCtx);
     drawFullChart();
   }
-}
-
-function scheduleCanvasRecovery() {
-  // En Android/PWA, al reencender pantalla el layout puede estabilizarse
-  // en varios pasos. Recalculamos varias veces para evitar gráfico chico.
-  [0, 80, 250, 700, 1400].forEach(delay => {
-    setTimeout(() => resizeCanvas(true), delay);
-  });
-}
-
-function setupCanvasResizeObserver() {
-  if (!('ResizeObserver' in window)) return;
-
-  let pending = false;
-  const observer = new ResizeObserver(() => {
-    if (pending) return;
-    pending = true;
-    requestAnimationFrame(() => {
-      pending = false;
-      resizeCanvas(true);
-    });
-  });
-
-  if (chartOpenArea) observer.observe(chartOpenArea);
-  if (fullCanvas && fullCanvas.parentElement) observer.observe(fullCanvas.parentElement);
 }
 
 function chartBounds(points) {
@@ -1166,17 +1129,10 @@ function setupInstallPrompt() {
 }
 
 document.addEventListener('visibilitychange', async () => {
-  if (document.visibilityState === 'visible') {
-    scheduleCanvasRecovery();
-  }
-
   if (wakeLockEnabled && document.visibilityState === 'visible' && !wakeLock) {
     await requestWakeLock();
   }
 });
-
-window.addEventListener('focus', scheduleCanvasRecovery);
-window.addEventListener('pageshow', scheduleCanvasRecovery);
 
 document.addEventListener('pointerdown', unlockPriorityAudio, { once: true });
 installBtn?.addEventListener('click', handleInstallClick);
@@ -1199,8 +1155,8 @@ fullClear.addEventListener('click', clearChart);
 chartOverlay.addEventListener('click', (event) => { if (event.target === chartOverlay) closeFullChart(); });
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeFullChart(); });
 
-window.addEventListener('resize', () => resizeCanvas(true));
-window.addEventListener('orientationchange', scheduleCanvasRecovery);
+window.addEventListener('resize', resizeCanvas);
+window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 200));
 
 preloadPriorityAudio();
 setupInstallPrompt();
@@ -1208,5 +1164,4 @@ buildModes();
 updateModeUi();
 updateReadout();
 setStatus('Sin conectar');
-setupCanvasResizeObserver();
-resizeCanvas(true);
+resizeCanvas();

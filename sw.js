@@ -1,4 +1,4 @@
-const CACHE = 'probador-automotor-ble-v8-fix-canvas-wake';
+const CACHE = 'probador-automotor-ble-v9-rollback-estable-v7';
 const ASSETS = [
   './',
   './index.html',
