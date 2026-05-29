@@ -1,4 +1,4 @@
-const CACHE = 'probador-automotor-ble-v12-ble-toggle-manual';
+const CACHE = 'probador-automotor-ble-v13-ble-stale-watchdog';
 const ASSETS = [
   './',
   './index.html',

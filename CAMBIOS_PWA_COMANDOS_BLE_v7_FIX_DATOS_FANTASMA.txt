@@ -1,0 +1,14 @@
+PWA comandos BLE v7 - Fix datos fantasma / BLE fuera de alcance
+
+Problema corregido:
+- Si el celular salia del alcance BLE, Android/Chrome podia tardar en disparar gattserverdisconnected.
+- La PWA seguia mostrando ultimos datos/historial como si estuviera conectada.
+
+Cambios:
+- Se agrega watchdog de datos BLE: si no entran notificaciones nuevas durante 4,5 s, la medicion se invalida.
+- Al perder datos BLE se limpia lectura, historial, rango y muestras.
+- El boton vuelve a CONECTAR y queda operativo.
+- No se envian comandos de modo si no hay conexion BLE real.
+- No se reproducen avisos de eventos ni lectura por voz con datos vencidos.
+- Se mantiene fix de canvas, audios neurales, instalacion, VOZ y comandos BLE.
+- Cache actualizado a v13.

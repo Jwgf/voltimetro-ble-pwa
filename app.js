@@ -16,6 +16,10 @@ let bleSessionId = 0;
 let retryReconnectToken = 0;
 let userWantsBleConnection = false;
 let manualBleDisconnect = false;
+let lastBleDataAt = 0;
+let bleDataStale = true;
+let bleWatchdogTimer = null;
+const BLE_DATA_STALE_MS = 4500;
 
 
 let voiceEnabled = false;
@@ -214,14 +218,14 @@ function setMode(modeKey) {
   drawChart();
   lastPulseAudioCount = 0;
 
-  if (changed) {
+  if (changed && isBleConnected()) {
     // Evita que un aviso de evento, por ejemplo "pulso detectado", se encime
     // con el aviso del modo recién seleccionado.
     priorityEventsMutedUntil = Date.now() + 2600;
     playPriorityAudio(MODE_AUDIO[modeKey], 2500);
   }
 
-  sendModeCommand(modeKey);
+  if (isBleConnected()) sendModeCommand(modeKey);
 }
 
 function updateModeUi() {
@@ -287,6 +291,63 @@ function isBleConnected() {
   return !!(device && device.gatt && device.gatt.connected);
 }
 
+function isBleDataFresh() {
+  return isBleConnected() && Number.isFinite(lastBleDataAt) && lastBleDataAt > 0 && (Date.now() - lastBleDataAt) <= BLE_DATA_STALE_MS;
+}
+
+function clearMeasurementData() {
+  lastVoltage = NaN;
+  lastRange = '--';
+  history.length = 0;
+  sampleCount = 0;
+  samplesEl.textContent = '0';
+  lastRawEl.textContent = '---';
+  rangeEl.textContent = 'RANGO --';
+  rangePillEl.textContent = 'Rango --';
+  updateReadout();
+  drawChart();
+}
+
+function markBleDataFresh() {
+  lastBleDataAt = Date.now();
+  bleDataStale = false;
+}
+
+function markBleDataLost(reason = 'Sin señal BLE') {
+  if (!userWantsBleConnection && !isBleConnected() && bleDataStale) return;
+
+  bleDataStale = true;
+  lastBleDataAt = 0;
+  userWantsBleConnection = false;
+  manualBleDisconnect = true;
+  bleSessionId++;
+  cancelBleReconnects();
+  removeDeviceDisconnectListener();
+  disconnectGattQuietly();
+  clearBleRuntimeHandles();
+  device = null;
+  connectBtn.disabled = false;
+  setStatus(reason);
+  clearMeasurementData();
+  playPriorityAudio('desconectado', 3500);
+  setTimeout(() => { manualBleDisconnect = false; }, 300);
+}
+
+function checkBleDataFreshness() {
+  if (!userWantsBleConnection) return;
+  if (!device) return;
+  if (!lastBleDataAt) return;
+
+  if ((Date.now() - lastBleDataAt) > BLE_DATA_STALE_MS) {
+    markBleDataLost('Sin señal BLE');
+  }
+}
+
+function startBleDataWatchdog() {
+  if (bleWatchdogTimer) return;
+  bleWatchdogTimer = setInterval(checkBleDataFreshness, 1000);
+}
+
 function removeDeviceDisconnectListener() {
   try {
     if (device) device.removeEventListener('gattserverdisconnected', onDisconnected);
@@ -304,8 +365,11 @@ function manualDisconnectBle() {
   disconnectGattQuietly();
   clearBleRuntimeHandles();
   device = null;
+  lastBleDataAt = 0;
+  bleDataStale = true;
   connectBtn.disabled = false;
   setStatus('Sin conectar');
+  clearMeasurementData();
   setTimeout(() => { manualBleDisconnect = false; }, 300);
 }
 
@@ -431,6 +495,7 @@ async function connectKnownDevice(session = bleSessionId) {
     if (session !== bleSessionId) return;
 
     if (!userWantsBleConnection) return;
+    markBleDataFresh();
     setStatus(device.name || 'Conectado', true);
     playPriorityAudio('conectado', 3500);
     sendModeCommand(selectedMode);
@@ -448,7 +513,10 @@ async function connectKnownDevice(session = bleSessionId) {
 function onDisconnected() {
   const shouldReconnect = userWantsBleConnection && !manualBleDisconnect;
 
+  bleDataStale = true;
+  lastBleDataAt = 0;
   setStatus('Sin conectar');
+  clearMeasurementData();
 
   if (shouldReconnect) {
     playPriorityAudio('desconectado', 3500);
@@ -507,6 +575,9 @@ function onData(event) {
 
   const packet = parsePacket(text);
   if (!packet || !Number.isFinite(packet.voltage)) return;
+
+  markBleDataFresh();
+  if (!isBleConnected()) setStatus(device?.name || 'Conectado', true);
 
   sampleCount++;
   samplesEl.textContent = String(sampleCount);
@@ -641,6 +712,10 @@ function updateReadout() {
 
   if (Number.isFinite(lastVoltage)) {
     sub = frozen ? 'Congelado' : 'Lectura activa';
+  }
+
+  if (userWantsBleConnection && bleDataStale) {
+    sub = 'Sin datos recientes';
   }
 
   if (selectedMode === 'crank') mainValue = stats.min;
@@ -1036,7 +1111,7 @@ function commandForMode(modeKey) {
 }
 
 async function sendBleCommand(text) {
-  if (!text || !commandCharacteristic) return false;
+  if (!text || !commandCharacteristic || !isBleConnected()) return false;
 
   try {
     const payload = new TextEncoder().encode(text.trim() + '\n');
@@ -1078,7 +1153,7 @@ function toggleVoice() {
 }
 
 function speakIfNeeded(v) {
-  if (!voiceEnabled) return;
+  if (!voiceEnabled || bleDataStale) return;
 
   const now = Date.now();
   if (now - lastSpokenAt < 3000) return;
@@ -1224,7 +1299,7 @@ async function playPriorityAudio(key, minGapMs = 5000) {
 }
 
 function handlePriorityEvents() {
-  if (voiceEnabled || !Number.isFinite(lastVoltage)) return;
+  if (voiceEnabled || bleDataStale || !Number.isFinite(lastVoltage)) return;
   if (Date.now() < priorityEventsMutedUntil) return;
 
   const stats = currentStats();
@@ -1325,6 +1400,7 @@ document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState === 'visible') {
     scheduleCanvasResizeAfterResume();
     normalizeBleStateAfterResume();
+    checkBleDataFreshness();
   } else {
     cancelBleReconnects();
   }
@@ -1368,6 +1444,7 @@ document.addEventListener('keydown', (event) => { if (event.key === 'Escape') cl
 window.addEventListener('resize', resizeCanvas);
 window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 200));
 
+startBleDataWatchdog();
 preloadPriorityAudio();
 setupInstallPrompt();
 buildModes();
