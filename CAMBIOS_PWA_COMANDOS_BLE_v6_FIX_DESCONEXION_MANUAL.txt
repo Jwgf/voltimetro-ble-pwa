@@ -1,0 +1,18 @@
+PWA COMANDOS BLE v6 - Fix desconexion manual / reconexion no deseada
+
+Cambios:
+- El boton CONECTAR ahora actua como toggle: conectado -> desconectar manualmente.
+- Cuando esta conectado, el texto del boton pasa a DESCONECTAR.
+- Si el usuario cancela el selector BLE, se cancela la intencion de conexion.
+- La reconexion automatica solo queda permitida si la desconexion fue inesperada y el usuario queria seguir conectado.
+- Si el usuario desconecta manualmente o cancela, no se reconecta sola al volver a energizar el ESP32.
+- Mantiene el fix minimo del canvas al volver de pantalla apagada.
+- Cache actualizado a v12.
+
+No se cambia:
+- Estetica.
+- Audios.
+- Boton VOZ.
+- Comandos BLE de modo.
+- Grafico normal/grande.
+- Firmware.

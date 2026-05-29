@@ -14,6 +14,8 @@ let commandCharacteristic = null;
 let reconnecting = false;
 let bleSessionId = 0;
 let retryReconnectToken = 0;
+let userWantsBleConnection = false;
+let manualBleDisconnect = false;
 
 
 let voiceEnabled = false;
@@ -167,7 +169,7 @@ let chartFullscreen = false;
 function setStatus(text, connected = false) {
   statusEl.textContent = text;
   connStateEl.textContent = connected ? 'Conectado' : text;
-  connTextEl.textContent = connected ? 'Conectado' : 'Conectar';
+  connTextEl.textContent = connected ? 'Desconectar' : 'Conectar';
   statusDotEl.className = connected ? 'dot on' : 'dot off';
   bleStateEl.textContent = connected ? 'activo' : 'inactivo';
   badgeEl.textContent = connected ? 'ON' : 'OFF';
@@ -281,12 +283,39 @@ function disconnectGattQuietly() {
   }
 }
 
+function isBleConnected() {
+  return !!(device && device.gatt && device.gatt.connected);
+}
+
+function removeDeviceDisconnectListener() {
+  try {
+    if (device) device.removeEventListener('gattserverdisconnected', onDisconnected);
+  } catch (err) {
+    console.warn('No se pudo quitar listener de desconexion BLE', err);
+  }
+}
+
+function manualDisconnectBle() {
+  userWantsBleConnection = false;
+  manualBleDisconnect = true;
+  bleSessionId++;
+  cancelBleReconnects();
+  removeDeviceDisconnectListener();
+  disconnectGattQuietly();
+  clearBleRuntimeHandles();
+  device = null;
+  connectBtn.disabled = false;
+  setStatus('Sin conectar');
+  setTimeout(() => { manualBleDisconnect = false; }, 300);
+}
+
 function prepareForManualConnect() {
   // Después de quedar mucho tiempo en segundo plano, Android/Chrome puede dejar
   // promesas BLE/reintentos en un estado viejo. Antes de abrir el selector BLE
   // limpiamos runtime y cancelamos reintentos, pero sin tocar pantalla, audios ni datos.
   bleSessionId++;
   cancelBleReconnects();
+  removeDeviceDisconnectListener();
   disconnectGattQuietly();
   clearBleRuntimeHandles();
   device = null;
@@ -295,9 +324,22 @@ function prepareForManualConnect() {
 
 function normalizeBleStateAfterResume() {
   // Al volver desde pantalla apagada o desde el acceso directo, no confiamos en
-  // reintentos pendientes. Dejamos la UI lista para que CONECTAR vuelva a pedir
-  // dispositivo con una acción real del usuario.
+  // reintentos pendientes. Si el usuario no pidio mantener la conexion, no
+  // dejamos que una sesion vieja se reactive sola.
   connectBtn.disabled = false;
+
+  if (!userWantsBleConnection) {
+    if (isBleConnected()) {
+      manualDisconnectBle();
+    } else {
+      bleSessionId++;
+      cancelBleReconnects();
+      clearBleRuntimeHandles();
+      device = null;
+      setStatus('Sin conectar');
+    }
+    return;
+  }
 
   if (!device || !device.gatt || !device.gatt.connected) {
     bleSessionId++;
@@ -312,13 +354,21 @@ function normalizeBleStateAfterResume() {
 
 async function connect() {
   try {
+    if (isBleConnected()) {
+      manualDisconnectBle();
+      return;
+    }
+
     if (!('bluetooth' in navigator)) {
       setStatus('Web Bluetooth no disponible');
       alert('Usar Chrome en Android o Chrome/Edge en PC.');
       return;
     }
 
+    userWantsBleConnection = true;
+    manualBleDisconnect = false;
     prepareForManualConnect();
+    userWantsBleConnection = true;
     const session = bleSessionId;
 
     setStatus('Buscando equipo...');
@@ -336,13 +386,20 @@ async function connect() {
     await connectKnownDevice(session);
   } catch (err) {
     console.error(err);
+    userWantsBleConnection = false;
+    manualBleDisconnect = false;
+    bleSessionId++;
     cancelBleReconnects();
+    clearBleRuntimeHandles();
+    device = null;
+    connectBtn.disabled = false;
     setStatus('Conexión cancelada');
   }
 }
 
 async function connectKnownDevice(session = bleSessionId) {
   if (!device) return;
+  if (!userWantsBleConnection) return;
   if (session !== bleSessionId) return;
 
   try {
@@ -373,25 +430,42 @@ async function connectKnownDevice(session = bleSessionId) {
 
     if (session !== bleSessionId) return;
 
+    if (!userWantsBleConnection) return;
     setStatus(device.name || 'Conectado', true);
     playPriorityAudio('conectado', 3500);
     sendModeCommand(selectedMode);
   } catch (err) {
     console.error(err);
-    if (session === bleSessionId) setStatus('No se pudo conectar');
+    if (session === bleSessionId) {
+      clearBleRuntimeHandles();
+      setStatus('No se pudo conectar');
+    }
   } finally {
     if (session === bleSessionId) reconnecting = false;
   }
 }
 
 function onDisconnected() {
-  setStatus('Sin señal');
-  playPriorityAudio('desconectado', 3500);
+  const shouldReconnect = userWantsBleConnection && !manualBleDisconnect;
+
+  setStatus('Sin conectar');
+
+  if (shouldReconnect) {
+    playPriorityAudio('desconectado', 3500);
+  }
 
   clearBleRuntimeHandles();
 
-  // Si la app está oculta o el teléfono apagó la pantalla, no dejamos un bucle
-  // de reconexión viejo esperando. Al volver, el botón CONECTAR queda limpio.
+  if (!shouldReconnect) {
+    cancelBleReconnects();
+    removeDeviceDisconnectListener();
+    device = null;
+    manualBleDisconnect = false;
+    return;
+  }
+
+  // Solo reconectamos si la perdida fue inesperada y el usuario queria seguir
+  // conectado. Si el usuario cancelo o desconecto manualmente, no se reconecta.
   if (document.visibilityState !== 'visible') {
     cancelBleReconnects();
     return;
@@ -401,16 +475,16 @@ function onDisconnected() {
 }
 
 async function retryReconnect(token = retryReconnectToken, session = bleSessionId) {
-  if (reconnecting || !device) return;
+  if (reconnecting || !device || !userWantsBleConnection) return;
 
   for (let i = 0; i < 10; i++) {
-    if (token !== retryReconnectToken || session !== bleSessionId) return;
+    if (token !== retryReconnectToken || session !== bleSessionId || !userWantsBleConnection) return;
     if (document.visibilityState !== 'visible') return;
 
     try {
       await sleep(1000);
 
-      if (token !== retryReconnectToken || session !== bleSessionId) return;
+      if (token !== retryReconnectToken || session !== bleSessionId || !userWantsBleConnection) return;
       if (device.gatt && device.gatt.connected) return;
 
       await connectKnownDevice(session);
