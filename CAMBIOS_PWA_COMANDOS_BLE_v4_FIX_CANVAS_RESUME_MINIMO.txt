@@ -1,0 +1,20 @@
+Probador BLE - PWA fix canvas resume minimo v10
+
+Base: rollback estable v7/cache v9.
+
+Correccion puntual:
+- Se agrega recalculo conservador del grafico al volver de pantalla apagada / segundo plano.
+- Eventos usados: visibilitychange visible, focus y pageshow.
+- No se usa ResizeObserver.
+- No se cambia la funcion resizeOneCanvas.
+- No se cambia CSS ni estructura del grafico.
+- En grafico grande se repite el resize a 30 ms y 180 ms al abrir para asegurar layout estable.
+- Cache actualizado a probador-automotor-ble-v10-fix-canvas-resume-minimo.
+
+No tocado:
+- BLE.
+- Comandos BLE.
+- Audios.
+- Boton VOZ.
+- Instalacion.
+- Estetica principal.

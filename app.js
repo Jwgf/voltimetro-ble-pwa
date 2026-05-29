@@ -600,6 +600,17 @@ function resizeCanvas() {
   }
 }
 
+function scheduleCanvasResizeAfterResume() {
+  // Parche conservador: al volver de pantalla apagada Android puede tardar
+  // un poco en estabilizar el tamaño del contenedor del canvas. No cambiamos
+  // la lógica de dibujo: sólo pedimos varios resize normales, como si el
+  // usuario rotara o cambiara tamaño de ventana.
+  requestAnimationFrame(resizeCanvas);
+  [120, 350, 800, 1500].forEach(delay => {
+    setTimeout(resizeCanvas, delay);
+  });
+}
+
 function chartBounds(points) {
   const mode = modes[selectedMode];
   let min = mode.vMin;
@@ -816,10 +827,12 @@ function openFullChart() {
   chartOverlay.setAttribute('aria-hidden', 'false');
   document.body.classList.add('chart-open');
   updateFullMetrics();
-  setTimeout(() => {
-    resizeOneCanvas(fullCanvas, fullCtx);
-    drawFullChart();
-  }, 30);
+  [30, 180].forEach(delay => {
+    setTimeout(() => {
+      resizeOneCanvas(fullCanvas, fullCtx);
+      drawFullChart();
+    }, delay);
+  });
 }
 
 function closeFullChart() {
@@ -1129,10 +1142,17 @@ function setupInstallPrompt() {
 }
 
 document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState === 'visible') {
+    scheduleCanvasResizeAfterResume();
+  }
+
   if (wakeLockEnabled && document.visibilityState === 'visible' && !wakeLock) {
     await requestWakeLock();
   }
 });
+
+window.addEventListener('focus', scheduleCanvasResizeAfterResume);
+window.addEventListener('pageshow', scheduleCanvasResizeAfterResume);
 
 document.addEventListener('pointerdown', unlockPriorityAudio, { once: true });
 installBtn?.addEventListener('click', handleInstallClick);
