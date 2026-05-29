@@ -12,6 +12,9 @@ let server = null;
 let characteristic = null;
 let commandCharacteristic = null;
 let reconnecting = false;
+let bleSessionId = 0;
+let retryReconnectToken = 0;
+
 
 let voiceEnabled = false;
 let lastSpokenAt = 0;
@@ -233,6 +236,80 @@ function updateModeUi() {
   });
 }
 
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function withTimeout(promise, ms, label) {
+  let timer = null;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(label || 'Operacion BLE sin respuesta')), ms);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
+function clearBleRuntimeHandles() {
+  try {
+    if (characteristic) {
+      characteristic.removeEventListener('characteristicvaluechanged', onData);
+    }
+  } catch (err) {
+    console.warn('No se pudo limpiar listener BLE anterior', err);
+  }
+
+  characteristic = null;
+  commandCharacteristic = null;
+  server = null;
+}
+
+function cancelBleReconnects() {
+  retryReconnectToken++;
+  reconnecting = false;
+}
+
+function disconnectGattQuietly() {
+  try {
+    if (device && device.gatt && device.gatt.connected) {
+      device.gatt.disconnect();
+    }
+  } catch (err) {
+    console.warn('No se pudo cerrar GATT anterior', err);
+  }
+}
+
+function prepareForManualConnect() {
+  // Después de quedar mucho tiempo en segundo plano, Android/Chrome puede dejar
+  // promesas BLE/reintentos en un estado viejo. Antes de abrir el selector BLE
+  // limpiamos runtime y cancelamos reintentos, pero sin tocar pantalla, audios ni datos.
+  bleSessionId++;
+  cancelBleReconnects();
+  disconnectGattQuietly();
+  clearBleRuntimeHandles();
+  device = null;
+  connectBtn.disabled = false;
+}
+
+function normalizeBleStateAfterResume() {
+  // Al volver desde pantalla apagada o desde el acceso directo, no confiamos en
+  // reintentos pendientes. Dejamos la UI lista para que CONECTAR vuelva a pedir
+  // dispositivo con una acción real del usuario.
+  connectBtn.disabled = false;
+
+  if (!device || !device.gatt || !device.gatt.connected) {
+    bleSessionId++;
+    cancelBleReconnects();
+    clearBleRuntimeHandles();
+    setStatus('Sin conectar');
+    return;
+  }
+
+  setStatus(device.name || 'Conectado', true);
+}
+
 async function connect() {
   try {
     if (!('bluetooth' in navigator)) {
@@ -241,84 +318,113 @@ async function connect() {
       return;
     }
 
+    prepareForManualConnect();
+    const session = bleSessionId;
+
     setStatus('Buscando equipo...');
 
-    device = await navigator.bluetooth.requestDevice({
+    const selectedDevice = await navigator.bluetooth.requestDevice({
       filters: [{ namePrefix: 'Volt_Taller' }],
       optionalServices: [SERVICE_UUID]
     });
 
+    if (session !== bleSessionId) return;
+
+    device = selectedDevice;
     device.addEventListener('gattserverdisconnected', onDisconnected);
 
-    await connectKnownDevice();
+    await connectKnownDevice(session);
   } catch (err) {
     console.error(err);
+    cancelBleReconnects();
     setStatus('Conexión cancelada');
   }
 }
 
-async function connectKnownDevice() {
+async function connectKnownDevice(session = bleSessionId) {
   if (!device) return;
+  if (session !== bleSessionId) return;
 
   try {
     reconnecting = true;
     setStatus('Conectando BLE...');
 
-    server = await device.gatt.connect();
+    server = await withTimeout(device.gatt.connect(), 12000, 'Conexion BLE sin respuesta');
+    if (session !== bleSessionId) return;
 
-    const service = await server.getPrimaryService(SERVICE_UUID);
-    characteristic = await service.getCharacteristic(VOLT_CHAR_UUID);
+    const service = await withTimeout(server.getPrimaryService(SERVICE_UUID), 8000, 'Servicio BLE sin respuesta');
+    if (session !== bleSessionId) return;
+
+    characteristic = await withTimeout(service.getCharacteristic(VOLT_CHAR_UUID), 8000, 'Caracteristica de datos sin respuesta');
+    if (session !== bleSessionId) return;
 
     try {
-      commandCharacteristic = await service.getCharacteristic(CMD_CHAR_UUID);
+      commandCharacteristic = await withTimeout(service.getCharacteristic(CMD_CHAR_UUID), 5000, 'Caracteristica de comandos sin respuesta');
     } catch (cmdErr) {
       commandCharacteristic = null;
       console.warn('Característica BLE de comandos no disponible; la PWA seguirá funcionando sin control de modo.', cmdErr);
     }
 
-    await characteristic.startNotifications();
+    if (session !== bleSessionId) return;
+
+    await withTimeout(characteristic.startNotifications(), 8000, 'Notificaciones BLE sin respuesta');
+    characteristic.removeEventListener('characteristicvaluechanged', onData);
     characteristic.addEventListener('characteristicvaluechanged', onData);
+
+    if (session !== bleSessionId) return;
 
     setStatus(device.name || 'Conectado', true);
     playPriorityAudio('conectado', 3500);
     sendModeCommand(selectedMode);
   } catch (err) {
     console.error(err);
-    setStatus('No se pudo conectar');
+    if (session === bleSessionId) setStatus('No se pudo conectar');
   } finally {
-    reconnecting = false;
+    if (session === bleSessionId) reconnecting = false;
   }
 }
 
 function onDisconnected() {
-  setStatus('Sin señal. Reintentando...');
+  setStatus('Sin señal');
   playPriorityAudio('desconectado', 3500);
 
-  characteristic = null;
-  commandCharacteristic = null;
-  server = null;
+  clearBleRuntimeHandles();
 
-  retryReconnect();
+  // Si la app está oculta o el teléfono apagó la pantalla, no dejamos un bucle
+  // de reconexión viejo esperando. Al volver, el botón CONECTAR queda limpio.
+  if (document.visibilityState !== 'visible') {
+    cancelBleReconnects();
+    return;
+  }
+
+  retryReconnect(++retryReconnectToken, bleSessionId);
 }
 
-async function retryReconnect() {
+async function retryReconnect(token = retryReconnectToken, session = bleSessionId) {
   if (reconnecting || !device) return;
 
-  for (let i = 0; i < 20; i++) {
+  for (let i = 0; i < 10; i++) {
+    if (token !== retryReconnectToken || session !== bleSessionId) return;
+    if (document.visibilityState !== 'visible') return;
+
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await sleep(1000);
 
-      if (device.gatt.connected) return;
+      if (token !== retryReconnectToken || session !== bleSessionId) return;
+      if (device.gatt && device.gatt.connected) return;
 
-      await connectKnownDevice();
+      await connectKnownDevice(session);
 
-      if (device.gatt.connected) return;
+      if (device.gatt && device.gatt.connected) return;
     } catch (err) {
       console.warn('Reintento BLE falló', i + 1, err);
     }
   }
 
-  setStatus('Sin señal');
+  if (token === retryReconnectToken && session === bleSessionId) {
+    reconnecting = false;
+    setStatus('Sin conectar');
+  }
 }
 
 function onData(event) {
@@ -1144,6 +1250,9 @@ function setupInstallPrompt() {
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState === 'visible') {
     scheduleCanvasResizeAfterResume();
+    normalizeBleStateAfterResume();
+  } else {
+    cancelBleReconnects();
   }
 
   if (wakeLockEnabled && document.visibilityState === 'visible' && !wakeLock) {
@@ -1151,8 +1260,15 @@ document.addEventListener('visibilitychange', async () => {
   }
 });
 
-window.addEventListener('focus', scheduleCanvasResizeAfterResume);
-window.addEventListener('pageshow', scheduleCanvasResizeAfterResume);
+window.addEventListener('focus', () => {
+  scheduleCanvasResizeAfterResume();
+  normalizeBleStateAfterResume();
+});
+
+window.addEventListener('pageshow', () => {
+  scheduleCanvasResizeAfterResume();
+  normalizeBleStateAfterResume();
+});
 
 document.addEventListener('pointerdown', unlockPriorityAudio, { once: true });
 installBtn?.addEventListener('click', handleInstallClick);

@@ -1,0 +1,20 @@
+PWA comandos BLE v5 - fix reactivacion BLE despues de pausa larga
+
+Base: PWA comandos BLE v4 con fix minimo de canvas, cache v10.
+
+Cambios:
+- Al volver desde pantalla apagada/segundo plano se normaliza el estado BLE.
+- Se cancelan reintentos BLE antiguos que podian quedar colgados.
+- El boton CONECTAR vuelve a quedar operativo despues de una pausa larga.
+- Al tocar CONECTAR se limpia la sesion BLE anterior y se pide nuevamente el equipo.
+- Se evita que promesas/reintentos viejos afecten a una nueva conexion.
+- Cache actualizado a probador-automotor-ble-v11-ble-resume.
+
+No se modifica:
+- Estetica.
+- Grafico normal/grande.
+- Audio/VOZ.
+- Audios neurales.
+- Wake Lock.
+- Comandos BLE de modo.
+- Firmware.
